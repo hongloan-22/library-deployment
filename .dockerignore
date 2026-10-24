@@ -6,4 +6,4 @@
 .gitignore
 
 nginx/certs/
-mysql_data/
+mysql_data/monitoring/mysql-exporter.my.cnf

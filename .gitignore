@@ -6,7 +6,5 @@
 *.pem
 *.key
 
-.DS_Store
-Thumbs.db
-
-nginx/certs/
+/nginx/certs/
+monitoring/mysql-exporter.my.cnf
