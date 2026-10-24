@@ -1,4 +1,3 @@
-
 services:
   db:
     image: mysql:8.4
@@ -21,6 +20,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    networks:
+      - backend_net
 
   web:
     build:
@@ -36,6 +37,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      - backend_net
+      - proxy_net
 
   phpmyadmin:
     image: phpmyadmin:5-apache
@@ -50,6 +54,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      - backend_net
+      - admin_net
 
   nginx:
     image: nginx:stable-alpine
@@ -63,6 +70,9 @@ services:
       - ./nginx/certs:/etc/nginx/certs:ro
     depends_on:
       - web
+    networks:
+      - proxy_net
+      - monitoring_net
 
   cadvisor:
     image: ghcr.io/google/cadvisor:v0.60.6
@@ -73,6 +83,8 @@ services:
       - /var/run:/var/run:rw
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
+    networks:
+      - monitoring_net
 
   nginx-exporter:
     image: nginx/nginx-prometheus-exporter:1.5.3
@@ -82,6 +94,9 @@ services:
       - --nginx.scrape-uri=http://nginx:8080/stub_status
     depends_on:
       - nginx
+    networks:
+      - proxy_net
+      - monitoring_net
 
   mysqld-exporter:
     image: prom/mysqld-exporter:v0.20.0
@@ -95,6 +110,38 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      - backend_net
+      - monitoring_net
+
+  loki:
+    image: grafana/loki:3.6.7
+    container_name: library-loki
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/loki/loki-config.yaml
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./monitoring/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki_data:/loki
+    networks:
+      - monitoring_net
+
+  promtail:
+    image: grafana/promtail:3.6.7
+    container_name: library-promtail
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/promtail/config.yaml
+    volumes:
+      - ./monitoring/promtail-config.yaml:/etc/promtail/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail_data:/var/lib/promtail
+    depends_on:
+      - loki
+    networks:
+      - monitoring_net
 
   prometheus:
     image: prom/prometheus:v3.15.1
@@ -113,6 +160,8 @@ services:
       - cadvisor
       - nginx-exporter
       - mysqld-exporter
+    networks:
+      - monitoring_net
 
   grafana:
     image: grafana/grafana:13.2.2
@@ -127,8 +176,26 @@ services:
       - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus
+      - loki
+    networks:
+      - monitoring_net
 
 volumes:
   mysql_data:
   prometheus_data:
   grafana_data:
+  loki_data:
+  promtail_data:
+
+networks:
+  backend_net:
+    internal: true
+
+  proxy_net:
+    driver: bridge
+
+  monitoring_net:
+    driver: bridge
+
+  admin_net:
+    driver: bridge
